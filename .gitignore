@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+*.egg-info/
+.eggs/
+*.egg
+
+# VSCode
+.vscode/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environments
+.env
+.venv/
+venv/
+ENV/
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# PostgreSQL
+*.pid
+*.conf
+*.log
+data/
+pgdata/
+
+# Misc
+*.swp
+*.swo
+*.bak
+
+# Ignore Guacamole DB data
+/guacamole/data/
+/guacamole/drive/
+
+
+# Ignore test output
+*.coverage
+htmlcov/
+
+# Ignore build artifacts
+dist/
+build/
+*.egg-info/
+
+# Ignore orchestrator logs
+*.log
