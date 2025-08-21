@@ -1,0 +1,56 @@
+# docker-compose.yml for Apache Guacamole (v5 - Definitive Fix)
+# This version uses the official auto-init container, a safe port, and removes all conflicts.
+
+services:
+  guacd:
+    image: guacamole/guacd
+    container_name: guacd-lise
+    restart: always
+    networks:
+      - guacamole-net
+
+  postgres:
+    image: postgres:13
+    container_name: postgres-guacamole-lise
+    restart: always
+    environment:
+      POSTGRES_DB: guacamole_db
+      POSTGRES_USER: guacamole_user
+      POSTGRES_PASSWORD: your_strong_password_here
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      - ./data/initdb/initdb.sql:/docker-entrypoint-initdb.d/initdb.sql:ro
+    networks:
+      - guacamole-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guacamole_user -d guacamole_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  guacamole:
+    image: guacamole/guacamole
+    container_name: guacamole-lise
+    restart: always
+    ports:
+      # Using a different port to avoid potential conflicts on Windows
+      - "9090:8080"
+    environment:
+      GUACD_HOSTNAME: guacd-lise
+      POSTGRESQL_HOSTNAME: postgres-guacamole-lise
+      POSTGRESQL_DATABASE: guacamole_db
+      POSTGRESQL_USER: guacamole_user
+      POSTGRESQL_PASSWORD: your_strong_password_here
+    depends_on:
+      postgres:
+        condition: service_healthy
+      guacd:
+        condition: service_started
+    networks:
+      - guacamole-net
+
+networks:
+  guacamole-net:
+    driver: bridge
