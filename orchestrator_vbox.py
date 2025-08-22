@@ -1,15 +1,16 @@
-# LISE 5.0 - Basic Orchestrator Script (Task 1.2) - VirtualBox Edition
-# This script automates the creation of the lab using VirtualBox VMs.
+# LISE 5.0 - Orchestrator Script with Target VM (Task 1.4 Complete) - VirtualBox Edition
+# This script automates the creation of the lab including a target VM.
 
 import time
 import json
 import requests
 
 # --- CONFIGURATION ---
-GNS3_SERVER_URL = "http://localhost:3080"
+GNS3_SERVER_URL = "http://127.0.0.1:3080" # Make sure your GNS3 server is using this port
 # IMPORTANT: Make sure these names match your VirtualBox VM templates in GNS3
 RED_VM_TEMPLATE_NAME = "Kali-Red-Team"
 BLUE_VM_TEMPLATE_NAME = "Kali-Blue-Team"
+TARGET_VM_TEMPLATE_NAME = "Kali-Target-VM" # The new target VM template
 # --- END OF CONFIGURATION ---
 
 # A session object will handle our connection to the GNS3 server
@@ -59,13 +60,15 @@ def main():
         print("\nFetching template information...")
         red_vm_template_id = get_template_id(RED_VM_TEMPLATE_NAME, "virtualbox")
         blue_vm_template_id = get_template_id(BLUE_VM_TEMPLATE_NAME, "virtualbox")
+        target_vm_template_id = get_template_id(TARGET_VM_TEMPLATE_NAME, "virtualbox")
         switch_template_id = get_template_id("Ethernet switch", "ethernet_switch")
         print(f"Found Template ID for '{RED_VM_TEMPLATE_NAME}'")
         print(f"Found Template ID for '{BLUE_VM_TEMPLATE_NAME}'")
+        print(f"Found Template ID for '{TARGET_VM_TEMPLATE_NAME}'")
         print("Found Template ID for 'Ethernet switch'")
 
         # --- Step 3: Robust Clean Up and Create Project ---
-        project_name = "LISE - VirtualBox Lab 1"
+        project_name = "LISE - Initial Scenario Lab"
         print(f"\nPreparing project: {project_name}...")
         
         response = session.get(f"{GNS3_SERVER_URL}/v2/projects")
@@ -98,9 +101,11 @@ def main():
             return response.json()
 
         switch = create_node_from_template(project_id, "Lab-Switch", switch_template_id, 0, 0)
-        red_vm = create_node_from_template(project_id, "Red-Team-VM", red_vm_template_id, -200, -100)
-        blue_vm = create_node_from_template(project_id, "Blue-Team-VM", blue_vm_template_id, 200, -100)
+        red_vm = create_node_from_template(project_id, "Red-Team-VM", red_vm_template_id, -250, -100)
+        blue_vm = create_node_from_template(project_id, "Blue-Team-VM", blue_vm_template_id, 250, -100)
+        target_vm = create_node_from_template(project_id, "Target-VM", target_vm_template_id, 0, -200)
         print("Nodes deployed successfully.")
+        time.sleep(10) # Increased pause to 10 seconds to prevent 409 Conflict error
 
         # --- Step 5: Create Links ---
         print("\nConnecting the devices with virtual cables...")
@@ -112,31 +117,37 @@ def main():
         switch_id = next(n['node_id'] for n in nodes if n['name'] == 'Lab-Switch')
         red_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Red-Team-VM')
         blue_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Blue-Team-VM')
+        target_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Target-VM')
 
         link1_payload = { "nodes": [ {"adapter_number": 0, "node_id": red_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 0} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link1_payload)).raise_for_status()
         
         link2_payload = { "nodes": [ {"adapter_number": 0, "node_id": blue_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 1} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link2_payload)).raise_for_status()
+        
+        link3_payload = { "nodes": [ {"adapter_number": 0, "node_id": target_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 2} ] }
+        session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link3_payload)).raise_for_status()
+        
         print("Nodes linked successfully.")
 
         # --- Step 6: Start the Lab Sequentially ---
         print("\nStarting the lab environment sequentially...")
         
-        # Start the switch first
         print("  - Starting Lab-Switch...")
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{switch_id}/start").raise_for_status()
         wait_for_node_status(project_id, switch_id, 'started')
 
-        # Start the Red VM and wait for it to be ready
         print("  - Starting Red-Team-VM...")
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{red_vm_id}/start").raise_for_status()
         wait_for_node_status(project_id, red_vm_id, 'started')
 
-        # Start the Blue VM and wait for it to be ready
         print("  - Starting Blue-Team-VM...")
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{blue_vm_id}/start").raise_for_status()
         wait_for_node_status(project_id, blue_vm_id, 'started')
+        
+        print("  - Starting Target-VM...")
+        session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{target_vm_id}/start").raise_for_status()
+        wait_for_node_status(project_id, target_vm_id, 'started')
 
         print("\nLab successfully deployed and all nodes started! You can now see it in GNS3.")
 
@@ -151,12 +162,21 @@ def main():
     except Exception as e:
         print(f"\n--- An Unexpected Error Occurred ---")
         print(f"Error: {e}")
+        # --- TROUBLESHOOTING STEPS ---
+        # If the script fails with an error, try the following steps:
+        # 1. Open GNS3 and try to create and run the same topology manually using the GUI.
+        #    This helps determine if the issue is with the script or the GNS3/VirtualBox setup itself.
+        # 2. If manual creation fails, go to Edit -> Preferences -> VirtualBox VMs. Select a VM
+        #    template (e.g., Kali-Red-Team), click Edit, go to the Network tab, and check the box
+        #    "Allow GNS3 to use any configured VirtualBox adapter". Click OK and try again.
+        # 3. If issues persist, close GNS3 and restart it by right-clicking the icon and
+        #    selecting "Run as administrator".
 
     finally:
         if project_id:
-            print("\nClosing project session...")
-            session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/close")
-            print("Project session closed.")
+            # We will not close the project in this version so you can see it running
+            # and verify the topology in the GNS3 UI.
+            pass
 
 if __name__ == "__main__":
     main()
