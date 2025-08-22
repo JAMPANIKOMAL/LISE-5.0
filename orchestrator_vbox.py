@@ -4,6 +4,8 @@
 import time
 import json
 import requests
+import os
+import shutil
 
 # --- CONFIGURATION ---
 GNS3_SERVER_URL = "http://127.0.0.1:3080" # Make sure your GNS3 server is using this port
@@ -71,18 +73,31 @@ def main():
         project_name = "LISE - Initial Scenario Lab"
         print(f"\nPreparing project: {project_name}...")
         
+        # Define the path to the GNS3 projects directory
+        gns3_projects_path = os.path.join(os.path.expanduser("~"), "GNS3", "projects")
+        
         response = session.get(f"{GNS3_SERVER_URL}/v2/projects")
         response.raise_for_status()
         for p in response.json():
             if p['name'] == project_name:
                 print("Found an old version of the lab. Cleaning it up...")
+                # Close and delete the project via the GNS3 API
                 session.post(f"{GNS3_SERVER_URL}/v2/projects/{p['project_id']}/close")
                 time.sleep(1)
                 session.delete(f"{GNS3_SERVER_URL}/v2/projects/{p['project_id']}").raise_for_status()
-                print("Cleanup complete.")
+                print("API cleanup complete.")
+                
+                # Also explicitly delete the project directory from the filesystem
+                project_path = os.path.join(gns3_projects_path, p['project_id'])
+                if os.path.isdir(project_path):
+                    print(f"Deleting project directory: {project_path}")
+                    shutil.rmtree(project_path, ignore_errors=True)
+                    print("Directory deleted.")
+                
                 time.sleep(2)
                 break
 
+        # The project name and folder name will be the same, as requested.
         payload = {'name': project_name}
         response = session.post(f"{GNS3_SERVER_URL}/v2/projects", data=json.dumps(payload))
         response.raise_for_status()
