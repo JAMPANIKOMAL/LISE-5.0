@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LISE 5.0 - Orchestrator Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .status-dot {
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse 2s infinite;
+        }
+        .status-idle { background-color: #6b7280; box-shadow: 0 0 0 0 rgba(107, 114, 128, 1); }
+        .status-launching { background-color: #3b82f6; box-shadow: 0 0 0 0 rgba(59, 130, 246, 1); }
+        .status-success { background-color: #22c55e; box-shadow: 0 0 0 0 rgba(34, 197, 94, 1); }
+        .status-error { background-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 1); }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(0, 0, 0, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-8 max-w-lg w-full text-center shadow-2xl">
+        
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-blue-400">LISE 5.0</h1>
+            <p class="text-gray-400 mt-1">Cyber Range Orchestrator</p>
+        </header>
+
+        <main>
+            <div class="bg-gray-900 rounded-lg p-4 mb-6 flex items-center justify-center space-x-3">
+                <span class="text-gray-400">Lab Status:</span>
+                <div id="status-container" class="flex items-center space-x-2">
+                    <span id="status-dot" class="status-dot status-idle"></span>
+                    <span id="status-text" class="font-medium text-lg">Idle</span>
+                </div>
+            </div>
+
+            <button id="launch-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                Launch Lab
+            </button>
+            <p id="message-area" class="text-sm text-gray-500 mt-4 h-5"></p>
+        </main>
+
+    </div>
+
+    <script>
+        const launchButton = document.getElementById('launch-button');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const messageArea = document.getElementById('message-area');
+
+        // Function to update the status display
+        function updateStatusDisplay(status) {
+            statusText.textContent = status;
+            statusDot.className = 'status-dot'; // Reset classes
+            if (status === 'Idle') {
+                statusDot.classList.add('status-idle');
+                launchButton.disabled = false;
+            } else if (status === 'Launching...') {
+                statusDot.classList.add('status-launching');
+                launchButton.disabled = true;
+            } else if (status === 'Successfully Deployed') {
+                statusDot.classList.add('status-success');
+                launchButton.disabled = false; // Allow re-launching
+            } else if (status === 'Error') {
+                statusDot.classList.add('status-error');
+                launchButton.disabled = false;
+            }
+        }
+
+        // Function to check the lab status from the server
+        async function checkStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                updateStatusDisplay(data.status);
+            } catch (error) {
+                console.error('Error fetching status:', error);
+                updateStatusDisplay('Error');
+                messageArea.textContent = 'Could not connect to server.';
+            }
+        }
+
+        // Event listener for the launch button
+        launchButton.addEventListener('click', async () => {
+            messageArea.textContent = '';
+            launchButton.disabled = true;
+            updateStatusDisplay('Launching...');
+            
+            try {
+                const response = await fetch('/launch', { method: 'POST' });
+                const data = await response.json();
+
+                if (response.ok) {
+                    messageArea.textContent = data.message;
+                } else {
+                    messageArea.textContent = `Error: ${data.message}`;
+                    checkStatus(); // Re-check status in case of error
+                }
+            } catch (error) {
+                console.error('Error launching lab:', error);
+                messageArea.textContent = 'Failed to send launch command.';
+                checkStatus(); // Re-check status in case of error
+            }
+        });
+
+        // Check the status every 3 seconds
+        setInterval(checkStatus, 3000);
+        // And check immediately on page load
+        document.addEventListener('DOMContentLoaded', checkStatus);
+    </script>
+</body>
+</html>
