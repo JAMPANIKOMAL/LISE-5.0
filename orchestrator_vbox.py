@@ -1,5 +1,6 @@
-# LISE 5.0 - Orchestrator Script with Target VM and NAT Connector (Final Version)
+# LISE 5.0 - Orchestrator Script with Target VM and NAT Connector (Final Version with Bug Fix)
 # This script automates the creation of an ISOLATED lab with internet access.
+# BUG FIX: Starts VMs sequentially with a delay to prevent DHCP race conditions.
 
 import time
 import json
@@ -64,7 +65,6 @@ def main():
         blue_vm_template_id = get_template_id(BLUE_VM_TEMPLATE_NAME, "virtualbox")
         target_vm_template_id = get_template_id(TARGET_VM_TEMPLATE_NAME, "virtualbox")
         switch_template_id = get_template_id("Ethernet switch", "ethernet_switch")
-        # --- UPDATED: Use the built-in NAT template ---
         nat_template_id = get_template_id("NAT", "nat")
         
         print(f"Found Template ID for '{RED_VM_TEMPLATE_NAME}'")
@@ -120,7 +120,6 @@ def main():
         red_vm = create_node_from_template(project_id, "Red-Team-VM", red_vm_template_id, -250, -100)
         blue_vm = create_node_from_template(project_id, "Blue-Team-VM", blue_vm_template_id, 250, -100)
         target_vm = create_node_from_template(project_id, "Target-VM", target_vm_template_id, 0, -200)
-        # --- UPDATED: Create the NAT node ---
         nat_node = create_node_from_template(project_id, "NAT-Internet", nat_template_id, 0, 150)
         
         print("Nodes deployed successfully.")
@@ -137,7 +136,6 @@ def main():
         red_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Red-Team-VM')
         blue_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Blue-Team-VM')
         target_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Target-VM')
-        # --- UPDATED: Get the NAT node ID ---
         nat_node_id = next(n['node_id'] for n in nodes if n['name'] == 'NAT-Internet')
 
 
@@ -150,14 +148,13 @@ def main():
         link3_payload = { "nodes": [ {"adapter_number": 0, "node_id": target_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 2} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link3_payload)).raise_for_status()
         
-        # --- UPDATED: Create the link from the Switch to the NAT node ---
         link4_payload = { "nodes": [ {"adapter_number": 0, "node_id": switch_id, "port_number": 3}, {"adapter_number": 0, "node_id": nat_node_id, "port_number": 0} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link4_payload)).raise_for_status()
 
         print("Nodes linked successfully.")
 
-        # --- Step 6: Start the Lab Sequentially ---
-        print("\nStarting the lab environment sequentially...")
+        # --- Step 6: Start the Lab Sequentially (BUG FIX) ---
+        print("\nStarting the lab environment sequentially to prevent race conditions...")
         
         print("  - Starting Lab-Switch...")
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{switch_id}/start").raise_for_status()
@@ -166,14 +163,20 @@ def main():
         print("  - Starting Red-Team-VM...")
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{red_vm_id}/start").raise_for_status()
         wait_for_node_status(project_id, red_vm_id, 'started')
+        print("    - Pausing for 20 seconds for VM to boot and get IP...")
+        time.sleep(20) # Wait for the VM to fully boot
 
         print("  - Starting Blue-Team-VM...")
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{blue_vm_id}/start").raise_for_status()
         wait_for_node_status(project_id, blue_vm_id, 'started')
+        print("    - Pausing for 20 seconds for VM to boot and get IP...")
+        time.sleep(20) # Wait for the VM to fully boot
         
         print("  - Starting Target-VM...")
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/nodes/{target_vm_id}/start").raise_for_status()
         wait_for_node_status(project_id, target_vm_id, 'started')
+        print("    - Pausing for 20 seconds for VM to boot and get IP...")
+        time.sleep(20) # Wait for the VM to fully boot
 
         print("\nLab successfully deployed and all nodes started! You can now see it in GNS3.")
 
