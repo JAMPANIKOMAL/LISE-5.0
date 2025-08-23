@@ -1,5 +1,5 @@
-# LISE 5.0 - Orchestrator Script with Target VM and Cloud Connector (Permanent Fix)
-# This script automates the creation of the lab including a target VM and an internet bridge.
+# LISE 5.0 - Orchestrator Script with Target VM and NAT Connector (Final Version)
+# This script automates the creation of an ISOLATED lab with internet access.
 
 import time
 import json
@@ -13,8 +13,6 @@ GNS3_SERVER_URL = "http://127.0.0.1:3080" # Make sure your GNS3 server is using 
 RED_VM_TEMPLATE_NAME = "Kali-Red-Team"
 BLUE_VM_TEMPLATE_NAME = "Kali-Blue-Team"
 TARGET_VM_TEMPLATE_NAME = "Kali-Target-VM"
-# --- NEW: Cloud template name is now a configurable variable ---
-CLOUD_TEMPLATE_NAME = "Cloud_23aug" 
 # --- END OF CONFIGURATION ---
 
 # A session object will handle our connection to the GNS3 server
@@ -24,7 +22,6 @@ def get_template_id(template_name, template_type):
     """
     Finds the ID of a template by its name and type.
     """
-    # Note: For the built-in Cloud, the template_type is 'cloud'
     response = session.get(f"{GNS3_SERVER_URL}/v2/templates")
     response.raise_for_status()
     for template in response.json():
@@ -67,15 +64,14 @@ def main():
         blue_vm_template_id = get_template_id(BLUE_VM_TEMPLATE_NAME, "virtualbox")
         target_vm_template_id = get_template_id(TARGET_VM_TEMPLATE_NAME, "virtualbox")
         switch_template_id = get_template_id("Ethernet switch", "ethernet_switch")
-        # --- UPDATED: Use the new variable for the Cloud template ID ---
-        cloud_template_id = get_template_id(CLOUD_TEMPLATE_NAME, "cloud")
+        # --- UPDATED: Use the built-in NAT template ---
+        nat_template_id = get_template_id("NAT", "nat")
         
         print(f"Found Template ID for '{RED_VM_TEMPLATE_NAME}'")
         print(f"Found Template ID for '{BLUE_VM_TEMPLATE_NAME}'")
         print(f"Found Template ID for '{TARGET_VM_TEMPLATE_NAME}'")
         print("Found Template ID for 'Ethernet switch'")
-        # --- UPDATED: Print the correct Cloud template name ---
-        print(f"Found Template ID for '{CLOUD_TEMPLATE_NAME}'")
+        print("Found Template ID for 'NAT'")
 
 
         # --- Step 3: Robust Clean Up and Create Project ---
@@ -124,7 +120,8 @@ def main():
         red_vm = create_node_from_template(project_id, "Red-Team-VM", red_vm_template_id, -250, -100)
         blue_vm = create_node_from_template(project_id, "Blue-Team-VM", blue_vm_template_id, 250, -100)
         target_vm = create_node_from_template(project_id, "Target-VM", target_vm_template_id, 0, -200)
-        cloud_bridge = create_node_from_template(project_id, "Cloud-Bridge", cloud_template_id, 0, 150)
+        # --- UPDATED: Create the NAT node ---
+        nat_node = create_node_from_template(project_id, "NAT-Internet", nat_template_id, 0, 150)
         
         print("Nodes deployed successfully.")
         time.sleep(10)
@@ -140,7 +137,8 @@ def main():
         red_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Red-Team-VM')
         blue_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Blue-Team-VM')
         target_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Target-VM')
-        cloud_bridge_id = next(n['node_id'] for n in nodes if n['name'] == 'Cloud-Bridge')
+        # --- UPDATED: Get the NAT node ID ---
+        nat_node_id = next(n['node_id'] for n in nodes if n['name'] == 'NAT-Internet')
 
 
         link1_payload = { "nodes": [ {"adapter_number": 0, "node_id": red_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 0} ] }
@@ -152,7 +150,8 @@ def main():
         link3_payload = { "nodes": [ {"adapter_number": 0, "node_id": target_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 2} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link3_payload)).raise_for_status()
         
-        link4_payload = { "nodes": [ {"adapter_number": 0, "node_id": switch_id, "port_number": 3}, {"adapter_number": 0, "node_id": cloud_bridge_id, "port_number": 0} ] }
+        # --- UPDATED: Create the link from the Switch to the NAT node ---
+        link4_payload = { "nodes": [ {"adapter_number": 0, "node_id": switch_id, "port_number": 3}, {"adapter_number": 0, "node_id": nat_node_id, "port_number": 0} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link4_payload)).raise_for_status()
 
         print("Nodes linked successfully.")
