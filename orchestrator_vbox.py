@@ -1,5 +1,5 @@
-# LISE 5.0 - Orchestrator Script with Target VM (Task 1.4 Complete) - VirtualBox Edition
-# This script automates the creation of the lab including a target VM.
+# LISE 5.0 - Orchestrator Script with Target VM and Cloud Connector (Permanent Fix)
+# This script automates the creation of the lab including a target VM and an internet bridge.
 
 import time
 import json
@@ -12,7 +12,9 @@ GNS3_SERVER_URL = "http://127.0.0.1:3080" # Make sure your GNS3 server is using 
 # IMPORTANT: Make sure these names match your VirtualBox VM templates in GNS3
 RED_VM_TEMPLATE_NAME = "Kali-Red-Team"
 BLUE_VM_TEMPLATE_NAME = "Kali-Blue-Team"
-TARGET_VM_TEMPLATE_NAME = "Kali-Target-VM" # The new target VM template
+TARGET_VM_TEMPLATE_NAME = "Kali-Target-VM"
+# --- NEW: Cloud template name is now a configurable variable ---
+CLOUD_TEMPLATE_NAME = "Cloud_23aug" 
 # --- END OF CONFIGURATION ---
 
 # A session object will handle our connection to the GNS3 server
@@ -22,6 +24,7 @@ def get_template_id(template_name, template_type):
     """
     Finds the ID of a template by its name and type.
     """
+    # Note: For the built-in Cloud, the template_type is 'cloud'
     response = session.get(f"{GNS3_SERVER_URL}/v2/templates")
     response.raise_for_status()
     for template in response.json():
@@ -64,16 +67,21 @@ def main():
         blue_vm_template_id = get_template_id(BLUE_VM_TEMPLATE_NAME, "virtualbox")
         target_vm_template_id = get_template_id(TARGET_VM_TEMPLATE_NAME, "virtualbox")
         switch_template_id = get_template_id("Ethernet switch", "ethernet_switch")
+        # --- UPDATED: Use the new variable for the Cloud template ID ---
+        cloud_template_id = get_template_id(CLOUD_TEMPLATE_NAME, "cloud")
+        
         print(f"Found Template ID for '{RED_VM_TEMPLATE_NAME}'")
         print(f"Found Template ID for '{BLUE_VM_TEMPLATE_NAME}'")
         print(f"Found Template ID for '{TARGET_VM_TEMPLATE_NAME}'")
         print("Found Template ID for 'Ethernet switch'")
+        # --- UPDATED: Print the correct Cloud template name ---
+        print(f"Found Template ID for '{CLOUD_TEMPLATE_NAME}'")
+
 
         # --- Step 3: Robust Clean Up and Create Project ---
         project_name = "LISE - Initial Scenario Lab"
         print(f"\nPreparing project: {project_name}...")
         
-        # Define the path to the GNS3 projects directory
         gns3_projects_path = os.path.join(os.path.expanduser("~"), "GNS3", "projects")
         
         response = session.get(f"{GNS3_SERVER_URL}/v2/projects")
@@ -81,13 +89,11 @@ def main():
         for p in response.json():
             if p['name'] == project_name:
                 print("Found an old version of the lab. Cleaning it up...")
-                # Close and delete the project via the GNS3 API
                 session.post(f"{GNS3_SERVER_URL}/v2/projects/{p['project_id']}/close")
                 time.sleep(1)
                 session.delete(f"{GNS3_SERVER_URL}/v2/projects/{p['project_id']}").raise_for_status()
                 print("API cleanup complete.")
                 
-                # Also explicitly delete the project directory from the filesystem
                 project_path = os.path.join(gns3_projects_path, p['project_id'])
                 if os.path.isdir(project_path):
                     print(f"Deleting project directory: {project_path}")
@@ -97,7 +103,6 @@ def main():
                 time.sleep(2)
                 break
 
-        # The project name and folder name will be the same, as requested.
         payload = {'name': project_name}
         response = session.post(f"{GNS3_SERVER_URL}/v2/projects", data=json.dumps(payload))
         response.raise_for_status()
@@ -119,8 +124,10 @@ def main():
         red_vm = create_node_from_template(project_id, "Red-Team-VM", red_vm_template_id, -250, -100)
         blue_vm = create_node_from_template(project_id, "Blue-Team-VM", blue_vm_template_id, 250, -100)
         target_vm = create_node_from_template(project_id, "Target-VM", target_vm_template_id, 0, -200)
+        cloud_bridge = create_node_from_template(project_id, "Cloud-Bridge", cloud_template_id, 0, 150)
+        
         print("Nodes deployed successfully.")
-        time.sleep(10) # Increased pause to 10 seconds to prevent 409 Conflict error
+        time.sleep(10)
 
         # --- Step 5: Create Links ---
         print("\nConnecting the devices with virtual cables...")
@@ -133,6 +140,8 @@ def main():
         red_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Red-Team-VM')
         blue_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Blue-Team-VM')
         target_vm_id = next(n['node_id'] for n in nodes if n['name'] == 'Target-VM')
+        cloud_bridge_id = next(n['node_id'] for n in nodes if n['name'] == 'Cloud-Bridge')
+
 
         link1_payload = { "nodes": [ {"adapter_number": 0, "node_id": red_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 0} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link1_payload)).raise_for_status()
@@ -143,6 +152,9 @@ def main():
         link3_payload = { "nodes": [ {"adapter_number": 0, "node_id": target_vm_id, "port_number": 0}, {"adapter_number": 0, "node_id": switch_id, "port_number": 2} ] }
         session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link3_payload)).raise_for_status()
         
+        link4_payload = { "nodes": [ {"adapter_number": 0, "node_id": switch_id, "port_number": 3}, {"adapter_number": 0, "node_id": cloud_bridge_id, "port_number": 0} ] }
+        session.post(f"{GNS3_SERVER_URL}/v2/projects/{project_id}/links", data=json.dumps(link4_payload)).raise_for_status()
+
         print("Nodes linked successfully.")
 
         # --- Step 6: Start the Lab Sequentially ---
@@ -177,20 +189,9 @@ def main():
     except Exception as e:
         print(f"\n--- An Unexpected Error Occurred ---")
         print(f"Error: {e}")
-        # --- TROUBLESHOOTING STEPS ---
-        # If the script fails with an error, try the following steps:
-        # 1. Open GNS3 and try to create and run the same topology manually using the GUI.
-        #    This helps determine if the issue is with the script or the GNS3/VirtualBox setup itself.
-        # 2. If manual creation fails, go to Edit -> Preferences -> VirtualBox VMs. Select a VM
-        #    template (e.g., Kali-Red-Team), click Edit, go to the Network tab, and check the box
-        #    "Allow GNS3 to use any configured VirtualBox adapter". Click OK and try again.
-        # 3. If issues persist, close GNS3 and restart it by right-clicking the icon and
-        #    selecting "Run as administrator".
 
     finally:
         if project_id:
-            # We will not close the project in this version so you can see it running
-            # and verify the topology in the GNS3 UI.
             pass
 
 if __name__ == "__main__":
